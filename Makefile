@@ -1,7 +1,7 @@
 DEBUG = y
 
 ifeq ($(DEBUG),y)
-  DEBFLAGS = -O -g -DSEKI_DEBUG
+  DEBFLAGS = -O -g -DSEKI_DEBUG -DDEBUG
 else
   DEBFLAGS = -O2
 endif
@@ -10,11 +10,11 @@ EXTRA_CFLAGS := $(DEBFLAGS)
 EXTRA_CFLAGS += -I$(LDDINC)
 
 ifneq ($(KERNELRELEASE),)
-# call from kernel build system
 
-seki-objs := seki_driver.o
+ccflags-y := -std=gnu99
 
-obj-m	:= seki.o
+seki_emu-objs := seki_driver.o
+obj-m	:= seki_emu.o
 
 else
 
@@ -25,7 +25,6 @@ modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) LDDINC=$(PWD)/../include modules
 
 endif
-
 
 
 clean:

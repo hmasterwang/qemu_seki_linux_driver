@@ -31,44 +31,61 @@
 #include <linux/pci.h>
 #include <linux/printk.h>
 
-MODULE_LICENSE("MIT");
+MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("Afa.L Cheng <afa@afa.moe>");
-MODULE_DESCRIPTION("PCI driver for the tutorial device");
+MODULE_DESCRIPTION("Driver for Seki PCIe FPGA Accelerator");
 
-static const struct pci_device_id pcidevid[] = {
-    /*
-     * Vendor ID, Device ID, Subvendor ID, Subdevice ID,
-     * Class ID, Class Mask, Drvier private data
-     */
-    { 0xFA58, 0x0961, PCI_ANY_ID, PCI_ANY_ID, 0x0B40, 0, 0 },
-    { }
+static const struct pci_device_id seki_dev_idtbl[] = {
+     // VID, DID, SVID, SDID, CID, Class Mask, Drvier private data
+    {0xFA58, 0x0961, PCI_ANY_ID, PCI_ANY_ID, 0x0B40, 0, 0},
+    {}
 };
 
-static int seki_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
 {
-    pr_debug("Device Found: Vendor %x, Device %x, Class %x\n",
-            pdev->vendor, pdev->device, pdev->class);
+    int rv;
+
+    pr_debug("Device Found");
+
+    rv = pci_enable_device(dev);
+
+    if (rv)
+        return rv;
+
     return 0;
 }
 
-/* called when the PCI core realizes that one of the pci_dev's handled by
- * this driver are removed (for whatever reason) from the system
- */
-static void seki_remove(struct pci_dev *pdev) {
-    pr_debug("Unloaded\n");
+static void seki_remove(struct pci_dev *dev) {
+    pr_debug("Device removed\n");
+
+}
+
+static int seki_suspend(struct pci_dev *dev, pm_message_t state)
+{
+    pr_debug("Device suspended\n");
+
+    return 0;
+}
+
+static int seki_resume(struct pci_dev *dev)
+{
+    pr_debug("Device resumed\n");
+
+    return 0;
 }
 
 static struct pci_driver pcie_seki_driver = {
-    .name = "Seki Accelerator Driver",
-    .id_table = pcidevid,
-    .probe = seki_probe,
-    .remove = seki_remove,
+    .name       = "seki_emu",
+    .id_table   = seki_dev_idtbl,
+    .probe      = seki_probe,
+    .remove     = seki_remove,
+    .suspend    = seki_suspend,
+    .resume     = seki_resume,
 };
 
 static int __init seki_driver_init(void)
 {
     int rv;
-    pr_debug("Registering driver...\n");
 
     rv = pci_register_driver(&pcie_seki_driver);
     if (rv) {
@@ -76,15 +93,16 @@ static int __init seki_driver_init(void)
         return rv;
     }
 
+    pr_debug("Driver loaded");
     return 0;
 }
 
 static void __exit seki_driver_exit(void)
 {
+    pci_unregister_driver(&pcie_seki_driver);
     pr_debug("Driver unloaded\n");
     return;
 }
 
-/* these lines show what should be done on insmod/rmmod */
 module_init(seki_driver_init);
 module_exit(seki_driver_exit);
