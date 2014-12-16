@@ -13,7 +13,7 @@ ifneq ($(KERNELRELEASE),)
 
 ccflags-y := -std=gnu99
 
-seki_emu-objs := seki_driver.o
+seki_emu-objs := seki_pcie_device.o seki_procfs.o
 obj-m	:= seki_emu.o
 
 else
