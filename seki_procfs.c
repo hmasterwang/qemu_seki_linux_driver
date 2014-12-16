@@ -46,6 +46,9 @@ static int seki_procfs_file_show(struct seq_file *f, void *data)
 
     device_data = f->private;
 
+    if (!device_data->used)
+        return -1;
+
     seq_printf(f,
                "Seki Board Revision:        0x%02x\n"
                "Seki Control MMIO Physical: 0x%016lx\n"
@@ -70,7 +73,7 @@ static int seki_procfs_file_show(struct seq_file *f, void *data)
 
                device_data->output_mmio_physical_addr,
                (unsigned long)device_data->output_mmio_virtual_addr,
-               device_data->output_mmio_length / 0x100000 // To MB
+               device_data->output_mmio_length / 0x100000
                );
     return 0;
 }
