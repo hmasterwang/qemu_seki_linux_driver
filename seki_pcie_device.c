@@ -30,16 +30,31 @@ static const struct pci_device_id seki_dev_idtbl[] = {
     {}
 };
 
-// C99 force init to 0
-SekiData _seki_data_array[SEKI_MAX_PCI_DEVICES];
-
 MODULE_DEVICE_TABLE(pci, seki_dev_idtbl);
 
+static unsigned int seki_allocate_device_number(void)
+{
+    int ret = -1;
+    for (int i = 0; i < SEKI_MAX_PCI_DEVICES; ++i) {
+        if (!_seki_device_number_used_map[i]) {
+            _seki_device_number_used_map[i] = 1;
+            ret = i;
+            break;
+        }
+    }
+    return ret;
+}
+
+static void seki_deallocate_device_number(unsigned int dev_num)
+{
+    _seki_device_number_used_map[dev_num] = 0;
+}
 
 static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
 {
     int rv;
     unsigned int slot;
+    unsigned int dev_num;
     SekiData *device_data = 0;
 
     SEKI_UNUSED(did);
@@ -47,23 +62,20 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
 
     pr_debug("Device Found on slot %d\n", slot);
 
-
     // Allocate a SekiData element
-    for (int i = 0; i < SEKI_MAX_PCI_DEVICES; ++i) {
-        if (!_seki_data_array[i].used) {
-            device_data = _seki_data_array + i;
-            device_data->used = 1;
-            device_data->slot = slot;
-            break;
-        }
-    }
+    dev_num = seki_allocate_device_number();
+    pr_debug("Device on slot %d allocated deviced number %d\n", slot, dev_num);
 
-    if (!device_data) { // Already 4 devices
-        pr_err("Driver does not support more than 4 devices");
+    if (dev_num == -1) {
+        pr_err("Driver does not support more than 4 devices\n");   // More than 4 devices?
 
         return -1;
     }
 
+    device_data = _seki_data_array + dev_num;
+    device_data->device_num = dev_num;
+    device_data->used = 1;
+    device_data->slot = slot;
     device_data->board_revision = dev->revision;
 
     // PCI enable/init sequence
@@ -103,9 +115,9 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
             ioremap_nocache(device_data->output_mmio_physical_addr,
                             device_data->output_mmio_length);
 
-    ++seki_device_count;
+    ++_seki_device_count;
 
-    seki_procfs_create_device(device_data);
+    seki_procfs_create_file_device(device_data);
 
     /*
     // DEBUG BEGIN
@@ -153,12 +165,13 @@ static void seki_remove(struct pci_dev *dev) {
     pci_clear_master(dev);
     pci_disable_device(dev);
 
-    --seki_device_count;
+    --_seki_device_count;
 
     // Remove procfs stub
-    seki_procfs_remove_device(device_data);
+    seki_procfs_remove_file_device(device_data);
 
     device_data->used = 0;
+    seki_deallocate_device_number(device_data->device_num);
     pr_debug("Device removed, slot %d\n", slot);
 }
 
@@ -214,7 +227,11 @@ static void __exit seki_driver_exit(void)
     return;
 }
 
-unsigned int seki_device_count = 0;
+
+unsigned int _seki_device_count = 0;
+
+int      _seki_device_number_used_map[SEKI_MAX_PCI_DEVICES] = {};
+SekiData _seki_data_array[SEKI_MAX_PCI_DEVICES] = {};
 
 module_init(seki_driver_init);
 module_exit(seki_driver_exit);

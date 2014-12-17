@@ -37,9 +37,13 @@ typedef struct SekiData {
 
     unsigned char   board_revision;
 
+    unsigned int    device_num;
+
     struct proc_dir_entry  *proc_entry;
 } SekiData;
 
-extern unsigned int seki_device_count;
+extern unsigned int _seki_device_count;
+extern SekiData _seki_data_array[SEKI_MAX_PCI_DEVICES];
+extern int      _seki_device_number_used_map[SEKI_MAX_PCI_DEVICES];
 
 #endif // SEKI_DEVICE_DEFS_H
