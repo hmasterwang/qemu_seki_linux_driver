@@ -4,10 +4,11 @@
  *
  * This file is dual MIT/GPL licensed.
  *
- * <seki_procfs.c>
- * ProcFS file operations.
+ * <seki_chardev.c>
  *
- * When changing this file, remember to change sysfs as well
+ * Note that sekictrl only has read and write while seki[0-3] only has mmap
+ * This is subject to change (if we can solve the race condition of writing
+ * file and mmap simutaneously)
  *
  ***************************************************************************/
 
@@ -68,9 +69,41 @@ static ssize_t seki_chardev_file_ctl_read(struct file *f,
 }
 
 static ssize_t seki_chardev_file_ctl_write(struct file *f,
-                                           const char __user *buf,
+                                           const char __user *user_buf,
                                            size_t len, loff_t *offset)
 {
+    unsigned int bound;
+    unsigned int device_num;
+    unsigned int dev_offset;
+    char *dev_buf;
+
+    SEKI_UNUSED(f);
+    bound       = 0x100000 * _seki_device_count;
+    device_num  = *offset / 0x100000;
+    dev_offset  = *offset % 0x100000;
+
+    if (*offset >= bound)
+        return 0;
+
+    if (dev_offset + len >= 0x100000)
+        len = 0x100000 - dev_offset;
+
+    dev_buf = vmalloc(len);
+    if (!dev_buf)
+        return -ENOMEM;
+
+    // Non zero indicating failure
+    if (copy_from_user(dev_buf, user_buf, len))
+        len = 0;    // Failed. len is return value now.
+    else {
+        spin_lock(&_seki_data_array[device_num].ctrl_mmio_lock);
+        memcpy_toio(_seki_data_array[device_num].ctrl_mmio_virtual_addr
+                    + dev_offset, dev_buf, len);
+        spin_unlock(&_seki_data_array[device_num].ctrl_mmio_lock);
+    }
+
+    vfree(dev_buf);
+
     return len;
 }
 

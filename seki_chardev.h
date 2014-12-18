@@ -4,10 +4,7 @@
  *
  * This file is dual MIT/GPL licensed.
  *
- * <seki_procfs.c>
- * ProcFS file operations.
- *
- * When changing this file, remember to change sysfs as well
+ * <seki_chardev.h>
  *
  ***************************************************************************/
 

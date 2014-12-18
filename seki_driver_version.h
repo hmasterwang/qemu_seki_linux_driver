@@ -4,6 +4,8 @@
  *
  * This file is dual MIT/GPL licensed.
  *
+ * <seki_driver_version.h>
+ *
  ***************************************************************************/
 
 
