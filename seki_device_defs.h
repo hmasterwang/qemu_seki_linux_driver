@@ -10,12 +10,15 @@
 #ifndef SEKI_DEVICE_DEFS_H
 #define SEKI_DEVICE_DEFS_H
 
-#include <linux/proc_fs.h>
+#include <linux/spinlock.h>
 
+// Forward declaration
+struct proc_dir_entry;
+
+#define SEKI_DRIVER_NAME        "seki_emu"
 #define SEKI_MAX_PCI_DEVICES    4       // I don't believe you can plug 4 more
-#define SEKI_VENDOR_ID          0xFA58  // Nobody, this is an unoccupied vendor id
+#define SEKI_VENDOR_ID          0xFA58  // This is an unoccupied vendor id
 #define SEKI_DEVICE_ID          0x0961  // Random
-
 
 #define SEKI_UNUSED(var)        ((void)(var))
 
@@ -40,6 +43,11 @@ typedef struct SekiData {
     unsigned int    device_num;
 
     struct proc_dir_entry  *proc_entry;
+
+    // Locks are for write only
+    spinlock_t      ctrl_mmio_lock;
+    spinlock_t      input_mmio_lock;
+    spinlock_t      output_mmio_lock;
 } SekiData;
 
 extern unsigned int _seki_device_count;

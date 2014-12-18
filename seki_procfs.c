@@ -25,7 +25,7 @@ static struct proc_dir_entry *seki_proc_status_file;
 
 // Static func prototypes
 static int seki_procfs_create_file_status(void);
-static int seki_procfs_remove_file_status(void);
+static void seki_procfs_remove_file_status(void);
 
 // Init & uninit
 int seki_init_procfs(void)
@@ -36,12 +36,12 @@ int seki_init_procfs(void)
     return seki_procfs_create_file_status();
 }
 
-int seki_uninit_procfs(void)
+void seki_uninit_procfs(void)
 {
+    seki_procfs_remove_file_status();
+
     remove_proc_entry(SEKI_PROCFS_NAME, NULL);
     seki_proc_base_dir = 0;
-
-    return seki_procfs_remove_file_status();
 }
 
 // File Ops
@@ -102,7 +102,7 @@ struct file_operations seki_file_dev_ops = {
 int seki_procfs_create_file_device(SekiData *seki_data)
 {
     char entry_filename[10];
-    snprintf(entry_filename, 10, "seki_%1d", seki_data->device_num);
+    snprintf(entry_filename, 10, "seki%1d", seki_data->device_num);
 
     seki_data->proc_entry = proc_create_data(entry_filename, 0666,
                                              seki_proc_base_dir,
@@ -115,14 +115,12 @@ int seki_procfs_create_file_device(SekiData *seki_data)
     return 0;
 }
 
-int seki_procfs_remove_file_device(SekiData *seki_data)
+void seki_procfs_remove_file_device(SekiData *seki_data)
 {
     char entry_filename[10];
-    snprintf(entry_filename, 10, "seki_%1d", seki_data->device_num);
+    snprintf(entry_filename, 10, "seki%1d", seki_data->device_num);
 
     remove_proc_entry(entry_filename, seki_proc_base_dir);
-
-    return 0;
 }
 
 // Procfs status file
@@ -192,10 +190,9 @@ static int seki_procfs_create_file_status(void)
     return 0;
 }
 
-static int seki_procfs_remove_file_status(void)
+static void seki_procfs_remove_file_status(void)
 {
     remove_proc_entry("status", seki_proc_base_dir);
     seki_proc_status_file = 0;
-    return 0;
 }
 

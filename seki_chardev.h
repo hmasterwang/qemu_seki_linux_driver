@@ -4,21 +4,21 @@
  *
  * This file is dual MIT/GPL licensed.
  *
+ * <seki_procfs.c>
+ * ProcFS file operations.
+ *
+ * When changing this file, remember to change sysfs as well
+ *
  ***************************************************************************/
 
 
-#ifndef SEKI_PROCFS_H
-#define SEKI_PROCFS_H
+#ifndef SEKI_CHARDEV_H
+#define SEKI_CHARDEV_H
 
-#include "seki_device_defs.h"
+#include <linux/fs.h>
 
-#define SEKI_PROCFS_NAME "seki"
-
-int seki_init_procfs(void);
-void seki_uninit_procfs(void);
-int seki_procfs_create_file_device(SekiData *seki_data);
-void seki_procfs_remove_file_device(SekiData *seki_data);
+int seki_register_chardev_file_ctl(void);
+void seki_unregister_chardev_file_ctl(void);
 
 
-
-#endif // SEKI_PROCFS_H
+#endif // SEKI_CHARDEV_H

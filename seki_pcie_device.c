@@ -18,6 +18,7 @@
 
 #include "seki_device_defs.h"
 #include "seki_procfs.h"
+#include "seki_chardev.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("Afa.L Cheng <afa@afa.moe>");
@@ -64,6 +65,7 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
 
     // Allocate a SekiData element
     dev_num = seki_allocate_device_number();
+    ++_seki_device_count;
     pr_debug("Device on slot %d allocated deviced number %d\n", slot, dev_num);
 
     if (dev_num == -1) {
@@ -77,6 +79,9 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
     device_data->used = 1;
     device_data->slot = slot;
     device_data->board_revision = dev->revision;
+    spin_lock_init(&device_data->ctrl_mmio_lock);
+    spin_lock_init(&device_data->input_mmio_lock);
+    spin_lock_init(&device_data->output_mmio_lock);
 
     // PCI enable/init sequence
     rv = pci_enable_device(dev);
@@ -88,7 +93,7 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
 
     pci_set_master(dev);
 
-    if (pci_request_region(dev, 0, "seki_emu")) {
+    if (pci_request_region(dev, 0, SEKI_DRIVER_NAME)) {
         pr_err("Failed to request region for device on slot %d\n", slot);
 
         goto err_disable;
@@ -115,21 +120,12 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
             ioremap_nocache(device_data->output_mmio_physical_addr,
                             device_data->output_mmio_length);
 
-    ++_seki_device_count;
 
-    seki_procfs_create_file_device(device_data);
-
-    /*
-    // DEBUG BEGIN
-    unsigned char dta[] = {0x44, 0x66, 0xaa, 0xee};
-    unsigned char dta2[] = {0x55, 0x88, 0xcc, 0xee};
-    unsigned char dta3[] = {0x77, 0x99, 0xff, 0xee};
-
-    memcpy_toio(device_data->ctrl_mmio_virtual_addr, dta, 4);
-    memcpy_toio(device_data->input_mmio_virtual_addr, dta2, 4);
-    memcpy_toio(device_data->output_mmio_virtual_addr, dta3, 4);
-    // DEBUG END
-    */
+    rv = seki_procfs_create_file_device(device_data);
+    if (rv) {
+        pr_err("Failed to create procfs file for device on slot %d\n", slot);
+        goto err_disable;
+    }
 
     return 0;
 
@@ -139,7 +135,7 @@ err_disable:
 
 err_cleanused:
     device_data->used = 0;
-
+    --_seki_device_count;
     return rv;
 }
 
@@ -158,6 +154,9 @@ static void seki_remove(struct pci_dev *dev) {
     if (!device_data)   // What device is it?
         return;
 
+    // Remove procfs stub
+    seki_procfs_remove_file_device(device_data);
+
     if (device_data->ctrl_mmio_virtual_addr)
         iounmap(device_data->ctrl_mmio_virtual_addr);
 
@@ -165,13 +164,16 @@ static void seki_remove(struct pci_dev *dev) {
     pci_clear_master(dev);
     pci_disable_device(dev);
 
-    --_seki_device_count;
+    // Finalize spinlocks
+    memset(&device_data->ctrl_mmio_lock,    0, sizeof(spinlock_t));
+    memset(&device_data->input_mmio_lock,   0, sizeof(spinlock_t));
+    memset(&device_data->input_mmio_lock,   0, sizeof(spinlock_t));
 
-    // Remove procfs stub
-    seki_procfs_remove_file_device(device_data);
-
+    // Free _seki_data_array
     device_data->used = 0;
     seki_deallocate_device_number(device_data->device_num);
+    --_seki_device_count;
+
     pr_debug("Device removed, slot %d\n", slot);
 }
 
@@ -193,7 +195,7 @@ static int seki_resume(struct pci_dev *dev)
 }
 
 static struct pci_driver pcie_seki_driver = {
-    .name       = "seki_emu",
+    .name       = SEKI_DRIVER_NAME,
     .id_table   = seki_dev_idtbl,
     .probe      = seki_probe,
     .remove     = seki_remove,
@@ -205,21 +207,39 @@ static int __init seki_driver_init(void)
 {
     int rv;
 
-    seki_init_procfs();
+    rv = seki_init_procfs();
+    if (rv) {
+        pr_err("Unable to init procfs\n");
+        return rv;
+    }
+
+    rv = seki_register_chardev_file_ctl();
+    if (rv) {
+        pr_err("Unable to register chardev sekictl\n");
+        goto err_uninit_procfs;
+    }
+
 
     rv = pci_register_driver(&pcie_seki_driver);
     if (rv) {
-        pr_err("Driver registration failed.\n");
-        return rv;
+        pr_err("Driver registration failed\n");
+        goto err_uninit_procfs;
     }
 
     pr_debug("Driver loaded");
     return 0;
+
+err_uninit_procfs:
+    seki_uninit_procfs();
+    return rv;
+
 }
 
 static void __exit seki_driver_exit(void)
 {
     pci_unregister_driver(&pcie_seki_driver);
+
+    seki_unregister_chardev_file_ctl();
 
     seki_uninit_procfs();
 

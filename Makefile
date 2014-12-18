@@ -1,4 +1,4 @@
-ccflags-y := -std=gnu99 -Wall -Wunused
+ccflags-y := -std=gnu99 -Wall -Wunused -Werror
 
 DEBUG = y
 
@@ -12,7 +12,7 @@ EXTRA_CFLAGS := $(DEBFLAGS)
 EXTRA_CFLAGS += -I$(LDDINC)
 
 ifneq ($(KERNELRELEASE),)
-seki_emu-objs := seki_pcie_device.o seki_procfs.o
+seki_emu-objs := seki_pcie_device.o seki_procfs.o seki_chardev.o
 obj-m	:= seki_emu.o
 else
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
