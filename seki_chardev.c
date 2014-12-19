@@ -6,7 +6,7 @@
  *
  * <seki_chardev.c>
  *
- * Note that sekictrl and wseki[0-3] are mmap only char device
+ * Note that sekictrl and seki[0-3] are mmap only char device
  *
  ***************************************************************************/
 
@@ -23,11 +23,13 @@
 #include "seki_chardev.h"
 
 // Variables
-static dev_t        _seki_chardev_file_ctl_dev_t;
+static dev_t        _seki_chardev_file_ctrl_dev_t;
+static dev_t        _seki_chardev_file_device_dev_t;
 static struct cdev  _seki_chardev_cdev_sekictrl;
 
 // FIXME: What will happen if a device is unplugged
 //          when already mmaped?
+// FIXME: Macronize strings
 // Ctl file ops
 static int
 seki_chardev_file_ctl_mmap(struct file *filp,
@@ -80,13 +82,28 @@ static struct file_operations seki_chardev_file_ctl_fops = {
 };
 
 // Device file ops
+static int
+seki_chardev_file_device_mmap(struct file *filp,
+                              struct vm_area_struct *vma)
+{
+    return -EAGAIN;
+
+    return 0;
+}
+
+static struct file_operations seki_chardev_file_device_fops = {
+    .owner  = THIS_MODULE,
+    .open   = nonseekable_open,
+    .llseek = no_llseek,
+    .mmap   = seki_chardev_file_device_mmap
+};
 
 
 // Register & unregister
-int seki_register_chardev_file_ctl(void)
+int seki_chardev_register_file_ctl(void)
 {
     int rv;
-    rv = alloc_chrdev_region(&_seki_chardev_file_ctl_dev_t, 0, 1, "sekictrl");
+    rv = alloc_chrdev_region(&_seki_chardev_file_ctrl_dev_t, 0, 1, "sekictrl");
     if (rv < 0) {
         pr_err("Unable to allocate sekictrl device region\n");
 
@@ -95,21 +112,78 @@ int seki_register_chardev_file_ctl(void)
 
 
     cdev_init(&_seki_chardev_cdev_sekictrl, &seki_chardev_file_ctl_fops);
-    rv = cdev_add(&_seki_chardev_cdev_sekictrl, _seki_chardev_file_ctl_dev_t, 1);
+    rv = cdev_add(&_seki_chardev_cdev_sekictrl,
+                  _seki_chardev_file_ctrl_dev_t, 1);
     if (rv < 0) {
         pr_err("Unable to add sekictrl char device\n");
 
         return rv;
     }
 
+    return 0;
+}
+
+void seki_chardev_unregister_file_ctl(void)
+{
+    cdev_del(&_seki_chardev_cdev_sekictrl);
+
+    unregister_chrdev_region(_seki_chardev_file_ctrl_dev_t, 1);
+}
+
+int seki_chardev_register_file_seki(void)
+{
+    int rv;
+    rv = alloc_chrdev_region(&_seki_chardev_file_device_dev_t, 0,
+                             SEKI_MAX_PCI_DEVICES, "seki");
+    if (rv < 0) {
+        pr_err("Unable to allocate seki device region\n");
+
+        return rv;
+    }
 
     return 0;
 }
 
-void seki_unregister_chardev_file_ctl(void)
+void seki_chardev_unregister_file_seki(void)
 {
-    cdev_del(&_seki_chardev_cdev_sekictrl);
-
-    unregister_chrdev_region(_seki_chardev_file_ctl_dev_t, 1);
+    unregister_chrdev_region(_seki_chardev_file_device_dev_t, SEKI_MAX_PCI_DEVICES);
 }
+
+int seki_chardev_create_file_seki(SekiData *device_data)
+{
+    int rv;
+
+    device_data->char_dev = cdev_alloc();
+    if (!device_data->char_dev) {
+        pr_err("Failed to allocate char device for dev %d on slot %d",
+               device_data->device_num, device_data->slot);
+
+        return -ENOMEM;
+    }
+    device_data->char_dev->owner = THIS_MODULE;
+    device_data->char_dev->ops   = &seki_chardev_file_device_fops;
+
+    rv = cdev_add(device_data->char_dev, _seki_chardev_file_device_dev_t,
+                  1);
+    if (rv) {
+        pr_err("Failed to add char device for dev %d on slot %d",
+               device_data->device_num, device_data->slot);
+        goto err_cdel;
+    }
+
+    return 0;
+
+err_cdel:
+    cdev_del(device_data->char_dev);
+    device_data->char_dev = 0;
+    return rv;
+}
+
+void seki_chardev_remove_file_seki(SekiData *device_data)
+{
+    if (device_data->char_dev) {
+        cdev_del(device_data->char_dev);
+    }
+}
+
 

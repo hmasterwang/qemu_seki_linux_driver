@@ -45,6 +45,7 @@ typedef struct SekiData {
     unsigned int    device_num;
 
     struct proc_dir_entry  *proc_entry;
+    struct cdev            *char_dev;
 
     // Locks are for write only
     spinlock_t      ctrl_mmio_lock;

@@ -10,9 +10,9 @@
 #ifndef SEKI_PROCFS_H
 #define SEKI_PROCFS_H
 
-#include "seki_device_defs.h"
-
 #define SEKI_PROCFS_NAME "seki"
+
+struct SekiData;
 
 int seki_init_procfs(void);
 void seki_uninit_procfs(void);

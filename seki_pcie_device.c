@@ -129,9 +129,18 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
         goto err_disable;
     }
 
+    rv = seki_chardev_create_file_seki(device_data);
+    if (rv) {
+        pr_err("Failed to create chardev for device on slot %d\n", slot);
+        goto err_uninit_procfs;
+    }
+
     return 0;
 
     // Errors:
+err_uninit_procfs:
+    seki_procfs_remove_file_device(device_data);
+
 err_disable:
     pci_disable_device(dev);
 
@@ -156,11 +165,18 @@ static void seki_remove(struct pci_dev *dev) {
     if (!device_data)   // What device is it?
         return;
 
-    // Remove procfs stub
+    seki_chardev_remove_file_seki(device_data);
+
     seki_procfs_remove_file_device(device_data);
 
     if (device_data->ctrl_mmio_virtual_addr)
         iounmap(device_data->ctrl_mmio_virtual_addr);
+
+    if (device_data->input_mmio_virtual_addr)
+        iounmap(device_data->input_mmio_virtual_addr);
+
+    if (device_data->output_mmio_virtual_addr)
+        iounmap(device_data->output_mmio_virtual_addr);
 
     pci_release_region(dev, 0);
     pci_clear_master(dev);
@@ -215,12 +231,17 @@ static int __init seki_driver_init(void)
         return rv;
     }
 
-    rv = seki_register_chardev_file_ctl();
+    rv = seki_chardev_register_file_ctl();
     if (rv) {
         pr_err("Unable to register chardev sekictl\n");
         goto err_uninit_procfs;
     }
 
+    rv = seki_chardev_register_file_seki();
+    if (rv) {
+        pr_err("Unable to register chardev seki\n");
+        goto err_unregister_chardev_file_ctl;
+    }
 
     rv = pci_register_driver(&pcie_seki_driver);
     if (rv) {
@@ -228,9 +249,12 @@ static int __init seki_driver_init(void)
         goto err_uninit_procfs;
     }
 
+
     pr_debug("Driver loaded");
     return 0;
 
+err_unregister_chardev_file_ctl:
+    seki_chardev_unregister_file_ctl();
 err_uninit_procfs:
     seki_uninit_procfs();
     return rv;
@@ -241,7 +265,9 @@ static void __exit seki_driver_exit(void)
 {
     pci_unregister_driver(&pcie_seki_driver);
 
-    seki_unregister_chardev_file_ctl();
+    seki_chardev_unregister_file_seki();
+
+    seki_chardev_unregister_file_ctl();
 
     seki_uninit_procfs();
 
