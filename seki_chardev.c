@@ -6,9 +6,7 @@
  *
  * <seki_chardev.c>
  *
- * Note that sekictrl only has read and write while seki[0-3] only has mmap
- * This is subject to change (if we can solve the race condition of writing
- * file and mmap simutaneously)
+ * Note that sekictrl and wseki[0-3] are mmap only char device
  *
  ***************************************************************************/
 
@@ -16,11 +14,10 @@
 
 #include <linux/cdev.h>
 #include <linux/slab.h>
-#include <linux/uaccess.h>
-#include <linux/vmalloc.h>
 #include <linux/errno.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/mm.h>
 
 #include "seki_device_defs.h"
 #include "seki_chardev.h"
@@ -29,90 +26,61 @@
 static dev_t        _seki_chardev_file_ctl_dev_t;
 static struct cdev  _seki_chardev_cdev_sekictrl;
 
-
+// FIXME: What will happen if a device is unplugged
+//          when already mmaped?
 // Ctl file ops
-// 1 Device each call
-static ssize_t seki_chardev_file_ctl_read(struct file *f,
-                                          char __user *user_buf,
-                                          size_t len, loff_t *offset)
+static int
+seki_chardev_file_ctl_mmap(struct file *filp,
+                           struct vm_area_struct *vma)
 {
-    unsigned int bound;
-    unsigned int device_num;
-    unsigned int dev_offset;
-    char *dev_buf;
+    // the unit of vm_pgoff is actually page frame
+    // if mmap length is less than a page frame,
+    // it will be automatically extended to 1 pf
 
-    SEKI_UNUSED(f);
-    bound       = 0x100000 * _seki_device_count;
-    device_num  = *offset / 0x100000;
-    dev_offset  = *offset % 0x100000;
+    // Only 1 device can be mapped one time
+    unsigned long dev_num = vma->vm_pgoff / 0x100;  // 100 pf per Ctrl Mem
+    unsigned long len = vma->vm_end - vma->vm_start; // in bytes
 
-    if (*offset >= bound)
-        return 0;
+    if (dev_num >= _seki_device_count) {
+        pr_err("mmap offset off range");
 
-    if (dev_offset + len >= 0x100000)
-        len = 0x100000 - dev_offset;
-
-    dev_buf = vmalloc(len);
-    if (!dev_buf)
-        return -ENOMEM;
-
-    memcpy_fromio(dev_buf, _seki_data_array[device_num].ctrl_mmio_virtual_addr
-                  + dev_offset, len);
-
-    // Non zero indicating failure
-    if (copy_to_user(user_buf, dev_buf, len))
-        len = 0;    // Failed. len is return value now.
-
-    vfree(dev_buf);
-
-    return len;
-}
-
-static ssize_t seki_chardev_file_ctl_write(struct file *f,
-                                           const char __user *user_buf,
-                                           size_t len, loff_t *offset)
-{
-    unsigned int bound;
-    unsigned int device_num;
-    unsigned int dev_offset;
-    char *dev_buf;
-
-    SEKI_UNUSED(f);
-    bound       = 0x100000 * _seki_device_count;
-    device_num  = *offset / 0x100000;
-    dev_offset  = *offset % 0x100000;
-
-    if (*offset >= bound)
-        return 0;
-
-    if (dev_offset + len >= 0x100000)
-        len = 0x100000 - dev_offset;
-
-    dev_buf = vmalloc(len);
-    if (!dev_buf)
-        return -ENOMEM;
-
-    // Non zero indicating failure
-    if (copy_from_user(dev_buf, user_buf, len))
-        len = 0;    // Failed. len is return value now.
-    else {
-        spin_lock(&_seki_data_array[device_num].ctrl_mmio_lock);
-        memcpy_toio(_seki_data_array[device_num].ctrl_mmio_virtual_addr
-                    + dev_offset, dev_buf, len);
-        spin_unlock(&_seki_data_array[device_num].ctrl_mmio_lock);
+        return -EINVAL;
     }
 
-    vfree(dev_buf);
+    if (len > 0x100000) {
+        pr_err("mmap length too large");
 
-    return len;
+        return -EINVAL;
+    }
+
+    if (!_seki_data_array[dev_num].used) {
+        pr_err("mmap invalid device struct. This should not happed");
+
+        return -EAGAIN;
+    }
+
+    vma->vm_flags |= VM_LOCKED;
+
+    if (io_remap_pfn_range(vma, vma->vm_start,
+                           (_seki_data_array[dev_num].ctrl_mmio_physical_addr
+                           >> PAGE_SHIFT) + vma->vm_pgoff,
+                           len,
+                           vma->vm_page_prot)) {
+        return -EAGAIN;
+    }
+    return 0;
+
 }
 
-// Device file ops
 static struct file_operations seki_chardev_file_ctl_fops = {
     .owner  = THIS_MODULE,
-    .read   = seki_chardev_file_ctl_read,
-    .write  = seki_chardev_file_ctl_write
+    .open   = nonseekable_open,
+    .llseek = no_llseek,
+    .mmap   = seki_chardev_file_ctl_mmap
 };
+
+// Device file ops
+
 
 // Register & unregister
 int seki_register_chardev_file_ctl(void)
