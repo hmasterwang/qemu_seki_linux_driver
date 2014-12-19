@@ -129,7 +129,7 @@ static int seki_probe(struct pci_dev *dev, const struct pci_device_id *did)
         goto err_disable;
     }
 
-    rv = seki_chardev_create_file_seki(device_data);
+    rv = seki_chardev_create_file_seki_device(device_data);
     if (rv) {
         pr_err("Failed to create chardev for device on slot %d\n", slot);
         goto err_uninit_procfs;
@@ -165,7 +165,7 @@ static void seki_remove(struct pci_dev *dev) {
     if (!device_data)   // What device is it?
         return;
 
-    seki_chardev_remove_file_seki(device_data);
+    seki_chardev_remove_file_seki_device(device_data);
 
     seki_procfs_remove_file_device(device_data);
 
@@ -237,7 +237,7 @@ static int __init seki_driver_init(void)
         goto err_uninit_procfs;
     }
 
-    rv = seki_chardev_register_file_seki();
+    rv = seki_chardev_register_file_seki_device();
     if (rv) {
         pr_err("Unable to register chardev seki\n");
         goto err_unregister_chardev_file_ctl;
@@ -265,7 +265,7 @@ static void __exit seki_driver_exit(void)
 {
     pci_unregister_driver(&pcie_seki_driver);
 
-    seki_chardev_unregister_file_seki();
+    seki_chardev_unregister_file_seki_device();
 
     seki_chardev_unregister_file_ctl();
 
